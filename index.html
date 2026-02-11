@@ -1,0 +1,1239 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF to Text Converter</title>
+    <meta name="description" content="複数のPDFファイルをテキストファイルに変換するブラウザベースツール">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        *,
+        *::before,
+        *::after {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg-primary: #0a0a1a;
+            --bg-secondary: #12122a;
+            --bg-card: rgba(255, 255, 255, 0.04);
+            --bg-card-hover: rgba(255, 255, 255, 0.08);
+            --border: rgba(255, 255, 255, 0.08);
+            --border-hover: rgba(255, 255, 255, 0.15);
+            --text-primary: #e8e8f0;
+            --text-secondary: #8888aa;
+            --text-muted: #555570;
+            --accent: #6c5ce7;
+            --accent-light: #a29bfe;
+            --accent-glow: rgba(108, 92, 231, 0.3);
+            --success: #00cec9;
+            --success-glow: rgba(0, 206, 201, 0.3);
+            --danger: #ff6b6b;
+            --danger-glow: rgba(255, 107, 107, 0.2);
+            --warning: #feca57;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* Background animation */
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background:
+                radial-gradient(ellipse at 20% 20%, rgba(108, 92, 231, 0.08) 0%, transparent 50%),
+                radial-gradient(ellipse at 80% 80%, rgba(0, 206, 201, 0.06) 0%, transparent 50%),
+                radial-gradient(ellipse at 50% 50%, rgba(108, 92, 231, 0.03) 0%, transparent 70%);
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .container {
+            max-width: 960px;
+            margin: 0 auto;
+            padding: 40px 24px;
+            position: relative;
+            z-index: 1;
+        }
+
+        /* Header */
+        .header {
+            text-align: center;
+            margin-bottom: 48px;
+        }
+
+        .header-icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 72px;
+            height: 72px;
+            border-radius: 20px;
+            background: linear-gradient(135deg, var(--accent), #a29bfe);
+            margin-bottom: 20px;
+            font-size: 32px;
+            box-shadow: 0 8px 32px var(--accent-glow);
+            animation: float 3s ease-in-out infinite;
+        }
+
+        @keyframes float {
+
+            0%,
+            100% {
+                transform: translateY(0);
+            }
+
+            50% {
+                transform: translateY(-6px);
+            }
+        }
+
+        .header h1 {
+            font-size: 32px;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--text-primary), var(--accent-light));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 8px;
+        }
+
+        .header p {
+            color: var(--text-secondary);
+            font-size: 15px;
+            font-weight: 300;
+        }
+
+        /* Drop Zone */
+        .drop-zone {
+            border: 2px dashed var(--border);
+            border-radius: 20px;
+            padding: 60px 40px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            background: var(--bg-card);
+            backdrop-filter: blur(20px);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .drop-zone::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(135deg, var(--accent-glow), transparent);
+            opacity: 0;
+            transition: opacity 0.4s;
+        }
+
+        .drop-zone:hover,
+        .drop-zone.drag-over {
+            border-color: var(--accent);
+            background: var(--bg-card-hover);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 40px var(--accent-glow);
+        }
+
+        .drop-zone:hover::before,
+        .drop-zone.drag-over::before {
+            opacity: 1;
+        }
+
+        .drop-zone-content {
+            position: relative;
+            z-index: 1;
+        }
+
+        .drop-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+            display: block;
+        }
+
+        .drop-zone h3 {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .drop-zone p {
+            color: var(--text-secondary);
+            font-size: 14px;
+        }
+
+        .browse-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 16px;
+            padding: 10px 24px;
+            background: linear-gradient(135deg, var(--accent), #7c6cf0);
+            color: white;
+            border: none;
+            border-radius: 12px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .browse-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 20px var(--accent-glow);
+        }
+
+        #file-input {
+            display: none;
+        }
+
+        /* File List */
+        .file-list-section {
+            margin-top: 32px;
+            display: none;
+        }
+
+        .file-list-section.visible {
+            display: block;
+            animation: slideUp 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(16px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .section-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 16px;
+        }
+
+        .section-title {
+            font-size: 16px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .file-count {
+            background: var(--accent);
+            color: white;
+            font-size: 12px;
+            font-weight: 600;
+            padding: 2px 10px;
+            border-radius: 20px;
+        }
+
+        .clear-all-btn {
+            background: none;
+            border: 1px solid var(--border);
+            color: var(--text-secondary);
+            padding: 6px 16px;
+            border-radius: 8px;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .clear-all-btn:hover {
+            border-color: var(--danger);
+            color: var(--danger);
+            background: var(--danger-glow);
+        }
+
+        .file-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .file-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 14px 18px;
+            background: var(--bg-card);
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            transition: all 0.3s;
+            animation: slideUp 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .file-item:hover {
+            border-color: var(--border-hover);
+            background: var(--bg-card-hover);
+        }
+
+        .file-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            background: linear-gradient(135deg, #ff6b6b20, #ee5a2420);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            flex-shrink: 0;
+        }
+
+        .file-info {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .file-name {
+            font-size: 14px;
+            font-weight: 500;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .file-size {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-top: 2px;
+        }
+
+        .file-status {
+            font-size: 12px;
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-weight: 500;
+            flex-shrink: 0;
+        }
+
+        .file-status.pending {
+            background: rgba(254, 202, 87, 0.1);
+            color: var(--warning);
+        }
+
+        .file-status.processing {
+            background: rgba(108, 92, 231, 0.1);
+            color: var(--accent-light);
+        }
+
+        .file-status.done {
+            background: rgba(0, 206, 201, 0.1);
+            color: var(--success);
+        }
+
+        .file-status.error {
+            background: var(--danger-glow);
+            color: var(--danger);
+        }
+
+        .file-remove {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            padding: 4px;
+            border-radius: 6px;
+            font-size: 16px;
+            transition: all 0.2s;
+            flex-shrink: 0;
+        }
+
+        .file-remove:hover {
+            color: var(--danger);
+            background: var(--danger-glow);
+        }
+
+        /* Actions */
+        .actions {
+            margin-top: 24px;
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 14px 28px;
+            border: none;
+            border-radius: 14px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            font-family: inherit;
+        }
+
+        .btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+            transform: none !important;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--accent), #7c6cf0);
+            color: white;
+            flex: 1;
+        }
+
+        .btn-primary:not(:disabled):hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 32px var(--accent-glow);
+        }
+
+        .btn-success {
+            background: linear-gradient(135deg, var(--success), #00b894);
+            color: white;
+            flex: 1;
+        }
+
+        .btn-success:not(:disabled):hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 32px var(--success-glow);
+        }
+
+        /* Progress Bar */
+        .progress-section {
+            margin-top: 24px;
+            display: none;
+        }
+
+        .progress-section.visible {
+            display: block;
+            animation: slideUp 0.3s;
+        }
+
+        .progress-info {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+
+        .progress-bar-track {
+            width: 100%;
+            height: 6px;
+            background: var(--bg-card);
+            border-radius: 3px;
+            overflow: hidden;
+        }
+
+        .progress-bar-fill {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, var(--accent), var(--success));
+            border-radius: 3px;
+            transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        /* Preview */
+        .preview-section {
+            margin-top: 32px;
+            display: none;
+        }
+
+        .preview-section.visible {
+            display: block;
+            animation: slideUp 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .preview-card {
+            background: var(--bg-card);
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            overflow: hidden;
+        }
+
+        .preview-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 18px 24px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .preview-header h3 {
+            font-size: 15px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .char-count {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        .preview-body {
+            padding: 24px;
+            max-height: 500px;
+            overflow-y: auto;
+        }
+
+        .preview-body pre {
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            font-size: 13px;
+            line-height: 1.7;
+            color: var(--text-secondary);
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+
+        .preview-body::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .preview-body::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .preview-body::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border-radius: 3px;
+        }
+
+        /* Stats */
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 12px;
+            margin-top: 24px;
+        }
+
+        .stat-card {
+            background: var(--bg-card);
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 18px;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 24px;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--accent-light), var(--success));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .stat-label {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-top: 4px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        /* Toast */
+        .toast {
+            position: fixed;
+            bottom: 32px;
+            right: 32px;
+            padding: 14px 24px;
+            border-radius: 14px;
+            font-size: 14px;
+            font-weight: 500;
+            z-index: 1000;
+            transform: translateY(100px);
+            opacity: 0;
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            backdrop-filter: blur(20px);
+        }
+
+        .toast.visible {
+            transform: translateY(0);
+            opacity: 1;
+        }
+
+        .toast.success {
+            background: rgba(0, 206, 201, 0.15);
+            border: 1px solid rgba(0, 206, 201, 0.3);
+            color: var(--success);
+        }
+
+        .toast.error {
+            background: rgba(255, 107, 107, 0.15);
+            border: 1px solid rgba(255, 107, 107, 0.3);
+            color: var(--danger);
+        }
+
+        /* Responsive */
+        @media (max-width: 640px) {
+            .container {
+                padding: 24px 16px;
+            }
+
+            .header h1 {
+                font-size: 24px;
+            }
+
+            .drop-zone {
+                padding: 40px 24px;
+            }
+
+            .actions {
+                flex-direction: column;
+            }
+
+            .btn {
+                justify-content: center;
+            }
+
+            .stats {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <div class="header-icon">📄</div>
+            <h1>PDF to Text Converter</h1>
+            <p>複数のPDFファイルを1つのテキストファイルに変換</p>
+        </div>
+
+        <!-- Drop Zone -->
+        <div class="drop-zone" id="dropZone">
+            <div class="drop-zone-content">
+                <span class="drop-icon">📎</span>
+                <h3>PDFファイルをドラッグ&ドロップ</h3>
+                <p>または下のボタンからファイルを選択</p>
+                <button class="browse-btn" onclick="document.getElementById('file-input').click()">
+                    📁 ファイルを選択
+                </button>
+            </div>
+            <input type="file" id="file-input" accept=".pdf" multiple>
+        </div>
+
+        <!-- File List -->
+        <div class="file-list-section" id="fileListSection">
+            <div class="section-header">
+                <div class="section-title">
+                    📋 ファイルリスト
+                    <span class="file-count" id="fileCount">0</span>
+                </div>
+                <button class="clear-all-btn" id="clearAllBtn">すべて削除</button>
+            </div>
+            <div class="file-list" id="fileList"></div>
+
+            <!-- Actions -->
+            <div class="actions">
+                <button class="btn btn-primary" id="convertBtn" disabled>
+                    ⚡ テキストに変換
+                </button>
+                <button class="btn btn-success" id="downloadBtn" disabled>
+                    💾 ダウンロード
+                </button>
+            </div>
+
+            <!-- Progress -->
+            <div class="progress-section" id="progressSection">
+                <div class="progress-info">
+                    <span id="progressText">処理中...</span>
+                    <span id="progressPercent">0%</span>
+                </div>
+                <div class="progress-bar-track">
+                    <div class="progress-bar-fill" id="progressFill"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Preview -->
+        <div class="preview-section" id="previewSection">
+            <div class="stats" id="stats">
+                <div class="stat-card">
+                    <div class="stat-value" id="statFiles">0</div>
+                    <div class="stat-label">ファイル数</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="statPages">0</div>
+                    <div class="stat-label">総ページ数</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="statChars">0</div>
+                    <div class="stat-label">文字数</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="statSize">0 KB</div>
+                    <div class="stat-label">出力サイズ</div>
+                </div>
+            </div>
+
+            <div class="preview-card" style="margin-top: 16px;">
+                <div class="preview-header">
+                    <h3>📝 プレビュー</h3>
+                    <span class="char-count" id="previewCharCount"></span>
+                </div>
+                <div class="preview-body">
+                    <pre id="previewText"></pre>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast -->
+    <div class="toast" id="toast"></div>
+
+    <script>
+        // Configure PDF.js worker and CMap for Japanese font support
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+        // CMap URL for resolving Japanese CID fonts (fixes 文字化け)
+        const CMAP_URL = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/cmaps/';
+        const STANDARD_FONT_DATA_URL = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/standard_fonts/';
+
+        // State
+        const state = {
+            files: [],
+            extractedText: '',
+            totalPages: 0,
+            isProcessing: false
+        };
+
+        // DOM Elements
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('file-input');
+        const fileListSection = document.getElementById('fileListSection');
+        const fileList = document.getElementById('fileList');
+        const fileCount = document.getElementById('fileCount');
+        const clearAllBtn = document.getElementById('clearAllBtn');
+        const convertBtn = document.getElementById('convertBtn');
+        const downloadBtn = document.getElementById('downloadBtn');
+        const progressSection = document.getElementById('progressSection');
+        const progressText = document.getElementById('progressText');
+        const progressPercent = document.getElementById('progressPercent');
+        const progressFill = document.getElementById('progressFill');
+        const previewSection = document.getElementById('previewSection');
+        const previewText = document.getElementById('previewText');
+        const previewCharCount = document.getElementById('previewCharCount');
+        const toast = document.getElementById('toast');
+
+        // --- Drag & Drop ---
+        ['dragenter', 'dragover'].forEach(event => {
+            dropZone.addEventListener(event, (e) => {
+                e.preventDefault();
+                dropZone.classList.add('drag-over');
+            });
+        });
+
+        ['dragleave', 'drop'].forEach(event => {
+            dropZone.addEventListener(event, (e) => {
+                e.preventDefault();
+                dropZone.classList.remove('drag-over');
+            });
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            const files = Array.from(e.dataTransfer.files).filter(f => f.type === 'application/pdf');
+            if (files.length === 0) {
+                showToast('PDFファイルのみ対応しています', 'error');
+                return;
+            }
+            addFiles(files);
+        });
+
+        dropZone.addEventListener('click', (e) => {
+            if (e.target.closest('.browse-btn')) return;
+            fileInput.click();
+        });
+
+        fileInput.addEventListener('change', () => {
+            const files = Array.from(fileInput.files);
+            if (files.length > 0) addFiles(files);
+            fileInput.value = '';
+        });
+
+        // --- File Management ---
+        function addFiles(newFiles) {
+            newFiles.forEach(file => {
+                // Check for duplicates
+                if (state.files.some(f => f.name === file.name && f.size === file.size)) {
+                    showToast(`${file.name} は既に追加されています`, 'error');
+                    return;
+                }
+                state.files.push(file);
+            });
+            updateUI();
+            // Reset extracted text when files change
+            state.extractedText = '';
+            state.totalPages = 0;
+            downloadBtn.disabled = true;
+            previewSection.classList.remove('visible');
+        }
+
+        function removeFile(index) {
+            state.files.splice(index, 1);
+            updateUI();
+            state.extractedText = '';
+            state.totalPages = 0;
+            downloadBtn.disabled = true;
+            previewSection.classList.remove('visible');
+        }
+
+        function clearAll() {
+            state.files = [];
+            state.extractedText = '';
+            state.totalPages = 0;
+            updateUI();
+            downloadBtn.disabled = true;
+            previewSection.classList.remove('visible');
+        }
+
+        function formatSize(bytes) {
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+            return (bytes / 1048576).toFixed(1) + ' MB';
+        }
+
+        function updateUI() {
+            const hasFiles = state.files.length > 0;
+            fileListSection.classList.toggle('visible', hasFiles);
+            fileCount.textContent = state.files.length;
+            convertBtn.disabled = !hasFiles || state.isProcessing;
+
+            fileList.innerHTML = state.files.map((file, i) => `
+        <div class="file-item">
+          <div class="file-icon">📕</div>
+          <div class="file-info">
+            <div class="file-name">${escapeHtml(file.name)}</div>
+            <div class="file-size">${formatSize(file.size)}</div>
+          </div>
+          <span class="file-status pending" id="status-${i}">待機中</span>
+          <button class="file-remove" onclick="removeFile(${i})" title="削除">✕</button>
+        </div>
+      `).join('');
+        }
+
+        function escapeHtml(str) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
+        // --- PDF Text Extraction ---
+
+        // Detect if page contains vertical text (縦書き)
+        function detectVerticalText(items) {
+            if (items.length < 5) return false;
+
+            // Check for vertical text patterns:
+            // In vertical text, single characters are stacked vertically (Y changes, X stays similar)
+            // and text flows from right to left
+            let singleCharItems = 0;
+            let verticalPatterns = 0;
+
+            for (let i = 0; i < items.length; i++) {
+                const item = items[i];
+                // Count single-char items (common in vertical text)
+                if (item.str.length === 1 && item.str.trim().length === 1) {
+                    singleCharItems++;
+                }
+
+                // Check for rotation in transform matrix (vertical text often has rotation)
+                // transform = [scaleX, skewY, skewX, scaleY, translateX, translateY]
+                const skewX = item.transform[2];
+                const skewY = item.transform[1];
+                if (Math.abs(skewX) > 0.1 || Math.abs(skewY) > 0.1) {
+                    verticalPatterns++;
+                }
+            }
+
+            // If many single chars or rotation patterns detected, likely vertical
+            const singleCharRatio = singleCharItems / items.length;
+            const verticalRatio = verticalPatterns / items.length;
+
+            // Also detect by checking if consecutive items have same X but different Y
+            let sameXCount = 0;
+            for (let i = 1; i < Math.min(items.length, 50); i++) {
+                const prevX = items[i - 1].transform[4];
+                const currX = items[i].transform[4];
+                const prevY = items[i - 1].transform[5];
+                const currY = items[i].transform[5];
+                if (Math.abs(prevX - currX) < 5 && Math.abs(prevY - currY) > 2) {
+                    sameXCount++;
+                }
+            }
+            const sameXRatio = sameXCount / Math.min(items.length - 1, 49);
+
+            return (singleCharRatio > 0.6 && sameXRatio > 0.3) || verticalRatio > 0.5;
+        }
+
+        // Extract text from vertical layout page
+        function extractVerticalPageText(items) {
+            if (items.length === 0) return '';
+
+            // Group items by X-coordinate columns (vertical columns)
+            const columnThreshold = 15; // pixels tolerance for same column
+            const columns = [];
+
+            for (const item of items) {
+                if (!item.str.trim()) continue;
+                const x = item.transform[4];
+                const y = item.transform[5];
+
+                // Find existing column or create new one
+                let found = false;
+                for (const col of columns) {
+                    if (Math.abs(col.x - x) < columnThreshold) {
+                        col.items.push({ str: item.str, y, x });
+                        // Update column average X
+                        col.x = (col.x * (col.items.length - 1) + x) / col.items.length;
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    columns.push({ x, items: [{ str: item.str, y, x }] });
+                }
+            }
+
+            // Sort columns from RIGHT to LEFT (Japanese vertical text reads right to left)
+            columns.sort((a, b) => b.x - a.x);
+
+            // Within each column, sort items from TOP to BOTTOM (higher Y = top in PDF coords may vary)
+            // PDF.js Y-axis: 0 is bottom, so higher Y = higher on page → sort descending
+            const lines = [];
+            for (const col of columns) {
+                col.items.sort((a, b) => b.y - a.y);
+                const lineText = col.items.map(item => item.str).join('');
+                if (lineText.trim()) {
+                    lines.push(lineText);
+                }
+            }
+
+            return lines.join('\n');
+        }
+
+        // Extract text from horizontal layout page (standard)
+        function extractHorizontalPageText(items) {
+            if (items.length === 0) return '';
+
+            let lastY = null;
+            let lineText = '';
+            const lines = [];
+
+            for (const item of items) {
+                const y = item.transform[5];
+                if (lastY !== null && Math.abs(y - lastY) > 2) {
+                    lines.push(lineText);
+                    lineText = '';
+                }
+                lineText += item.str;
+                lastY = y;
+            }
+            if (lineText) lines.push(lineText);
+
+            return lines.join('\n');
+        }
+
+        // Clean up and format extracted text into readable sentences (成文処理)
+        function formatText(rawText) {
+            let text = rawText;
+
+            // Remove excessive blank lines (3+ → 2)
+            text = text.replace(/\n{3,}/g, '\n\n');
+
+            // Remove trailing spaces on each line
+            text = text.replace(/[ \t]+$/gm, '');
+
+            // Remove leading spaces on each line (but preserve indentation of 2+ spaces)
+            text = text.replace(/^[ \t]{1}(?![ \t])/gm, '');
+
+            // Join lines that are part of the same sentence
+            // (line doesn't end with sentence-ending punctuation and next line doesn't start with special chars)
+            const lines = text.split('\n');
+            const result = [];
+
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i].trim();
+
+                if (line === '') {
+                    result.push('');
+                    continue;
+                }
+
+                // Check if this line should be merged with the next
+                const nextLine = (i + 1 < lines.length) ? lines[i + 1].trim() : '';
+
+                // Sentence-ending patterns (Japanese and English)
+                const endsWithPunctuation = /[。．.！!？?）\)」』】》〉\]｝}―…]$/.test(line);
+                const nextStartsWithSpecial = /^[・●■□▪▶▷※◆◇★☆①②③④⑤⑥⑦⑧⑨⑩（\(「『【《〈\[｛{第\d]/.test(nextLine);
+                const isListItem = /^[・●■□▪▶▷※◆◇★☆①②③④⑤⑥⑦⑧⑨⑩\-\d+\.]+/.test(line);
+                const isHeader = line.length < 30 && (nextLine === '' || nextStartsWithSpecial);
+
+                if (!endsWithPunctuation && nextLine !== '' && !nextStartsWithSpecial && !isListItem && !isHeader && line.length > 5) {
+                    // Merge with next line (continuation of sentence)
+                    result.push(line);
+                    // Don't add newline - the next iteration will handle joining
+                    if (result.length >= 2) {
+                        const prev = result[result.length - 2];
+                        // Check if previous line was also a merge candidate
+                    }
+                } else {
+                    result.push(line);
+                }
+            }
+
+            // Second pass: join consecutive non-empty lines that look like they should be merged
+            const finalLines = [];
+            let buffer = '';
+            for (const line of result) {
+                if (line === '') {
+                    if (buffer) {
+                        finalLines.push(buffer);
+                        buffer = '';
+                    }
+                    finalLines.push('');
+                } else {
+                    if (buffer) {
+                        // Check if buffer ends with sentence-ending punctuation
+                        const bufferEndsComplete = /[。．.！!？?）\)」』】》〉\]｝}]$/.test(buffer);
+                        const lineStartsNew = /^[・●■□▪▶▷※◆◇★☆①②③④⑤⑥⑦⑧⑨⑩（\(「『【《〈第\d]/.test(line);
+
+                        if (bufferEndsComplete || lineStartsNew) {
+                            finalLines.push(buffer);
+                            buffer = line;
+                        } else {
+                            // Merge lines
+                            buffer += line;
+                        }
+                    } else {
+                        buffer = line;
+                    }
+                }
+            }
+            if (buffer) finalLines.push(buffer);
+
+            return finalLines.join('\n');
+        }
+
+        async function extractTextFromPDF(file, fileIndex) {
+            const arrayBuffer = await file.arrayBuffer();
+            const pdf = await pdfjsLib.getDocument({
+                data: arrayBuffer,
+                cMapUrl: CMAP_URL,
+                cMapPacked: true,
+                standardFontDataUrl: STANDARD_FONT_DATA_URL,
+                useSystemFonts: true
+            }).promise;
+            const numPages = pdf.numPages;
+            let text = '';
+
+            for (let i = 1; i <= numPages; i++) {
+                const page = await pdf.getPage(i);
+                const content = await page.getTextContent();
+
+                let pageText;
+                if (detectVerticalText(content.items)) {
+                    // Vertical text detected → convert to horizontal
+                    pageText = extractVerticalPageText(content.items);
+                } else {
+                    // Standard horizontal text
+                    pageText = extractHorizontalPageText(content.items);
+                }
+
+                text += pageText;
+                if (i < numPages) text += '\n\n';
+
+                // Update progress
+                updateFileProgress(fileIndex, i, numPages);
+            }
+
+            // Apply text formatting/sentence formation
+            text = formatText(text);
+
+            return { text, pages: numPages };
+        }
+
+        function updateFileProgress(fileIndex, currentPage, totalPages) {
+            const statusEl = document.getElementById(`status-${fileIndex}`);
+            if (statusEl) {
+                statusEl.className = 'file-status processing';
+                statusEl.textContent = `${currentPage}/${totalPages}ページ`;
+            }
+        }
+
+        async function convert() {
+            if (state.isProcessing || state.files.length === 0) return;
+
+            state.isProcessing = true;
+            state.extractedText = '';
+            state.totalPages = 0;
+            convertBtn.disabled = true;
+            downloadBtn.disabled = true;
+            previewSection.classList.remove('visible');
+            progressSection.classList.add('visible');
+
+            const totalFiles = state.files.length;
+            let combinedText = '';
+            let totalPages = 0;
+            let processedFiles = 0;
+            let errorFiles = 0;
+
+            for (let i = 0; i < totalFiles; i++) {
+                const file = state.files[i];
+                const statusEl = document.getElementById(`status-${i}`);
+
+                try {
+                    progressText.textContent = `${file.name} を処理中...`;
+
+                    const result = await extractTextFromPDF(file, i);
+
+                    // Add separator between files
+                    if (combinedText.length > 0) {
+                        combinedText += '\n\n';
+                    }
+                    combinedText += `${'='.repeat(60)}\n`;
+                    combinedText += `  ${file.name}\n`;
+                    combinedText += `${'='.repeat(60)}\n\n`;
+                    combinedText += result.text;
+
+                    totalPages += result.pages;
+                    processedFiles++;
+
+                    if (statusEl) {
+                        statusEl.className = 'file-status done';
+                        statusEl.textContent = '完了 ✓';
+                    }
+                } catch (err) {
+                    console.error(`Error processing ${file.name}:`, err);
+                    errorFiles++;
+                    if (statusEl) {
+                        statusEl.className = 'file-status error';
+                        statusEl.textContent = 'エラー';
+                    }
+
+                    // Still add an entry for the failed file
+                    if (combinedText.length > 0) combinedText += '\n\n';
+                    combinedText += `${'='.repeat(60)}\n`;
+                    combinedText += `  ${file.name} (テキスト抽出エラー)\n`;
+                    combinedText += `${'='.repeat(60)}\n`;
+                }
+
+                // Update overall progress
+                const percent = Math.round(((i + 1) / totalFiles) * 100);
+                progressPercent.textContent = `${percent}%`;
+                progressFill.style.width = `${percent}%`;
+            }
+
+            state.extractedText = combinedText;
+            state.totalPages = totalPages;
+            state.isProcessing = false;
+
+            // Update progress text
+            progressText.textContent = `完了 (${processedFiles}/${totalFiles} ファイル処理済み)`;
+
+            // Enable buttons
+            convertBtn.disabled = false;
+            if (state.extractedText.length > 0) {
+                downloadBtn.disabled = false;
+            }
+
+            // Show preview
+            showPreview();
+
+            if (errorFiles > 0) {
+                showToast(`${errorFiles}個のファイルでエラーが発生しました`, 'error');
+            } else {
+                showToast(`${processedFiles}個のファイルを正常に変換しました！`, 'success');
+            }
+        }
+
+        function showPreview() {
+            previewSection.classList.add('visible');
+
+            // Update stats
+            document.getElementById('statFiles').textContent = state.files.length;
+            document.getElementById('statPages').textContent = state.totalPages;
+
+            const charCount = state.extractedText.length;
+            document.getElementById('statChars').textContent = charCount.toLocaleString();
+
+            const sizeKB = new Blob([state.extractedText]).size;
+            document.getElementById('statSize').textContent = formatSize(sizeKB);
+
+            // Show preview (truncated if very long)
+            const maxPreview = 10000;
+            if (charCount > maxPreview) {
+                previewText.textContent = state.extractedText.substring(0, maxPreview) + '\n\n... (以降省略 - ダウンロードで全文を取得できます)';
+                previewCharCount.textContent = `${maxPreview.toLocaleString()} / ${charCount.toLocaleString()} 文字表示中`;
+            } else {
+                previewText.textContent = state.extractedText;
+                previewCharCount.textContent = `${charCount.toLocaleString()} 文字`;
+            }
+
+            // Scroll to preview
+            previewSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+
+        // --- Download ---
+        function download() {
+            if (!state.extractedText) return;
+
+            const blob = new Blob([state.extractedText], { type: 'text/plain;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+
+            // Generate filename
+            const now = new Date();
+            const timestamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}_${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}`;
+            a.download = `pdf_text_${timestamp}.txt`;
+            a.href = url;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+
+            showToast('テキストファイルをダウンロードしました！', 'success');
+        }
+
+        // --- Toast ---
+        function showToast(message, type = 'success') {
+            toast.textContent = message;
+            toast.className = `toast ${type}`;
+            requestAnimationFrame(() => {
+                toast.classList.add('visible');
+            });
+            setTimeout(() => {
+                toast.classList.remove('visible');
+            }, 3000);
+        }
+
+        // --- Event Listeners ---
+        clearAllBtn.addEventListener('click', clearAll);
+        convertBtn.addEventListener('click', convert);
+        downloadBtn.addEventListener('click', download);
+    </script>
+</body>
+
+</html>
