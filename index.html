@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PDF to Text Converter</title>
+    <title>File to Text Converter</title>
     <meta name="description" content="複数のPDFファイルをテキストファイルに変換するブラウザベースツール">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -618,21 +618,23 @@
         <!-- Header -->
         <div class="header">
             <div class="header-icon">📄</div>
-            <h1>PDF to Text Converter</h1>
-            <p>複数のPDFファイルを1つのテキストファイルに変換</p>
+            <h1>File to Text Converter</h1>
+            <p>複数のファイル（PDF, TXT, CSV, MD等）を1つのテキストファイルに変換</p>
         </div>
 
         <!-- Drop Zone -->
         <div class="drop-zone" id="dropZone">
             <div class="drop-zone-content">
                 <span class="drop-icon">📎</span>
-                <h3>PDFファイルをドラッグ&ドロップ</h3>
-                <p>または下のボタンからファイルを選択</p>
+                <h3>ファイルをドラッグ&ドロップ</h3>
+                <p>PDF, TXT, CSV, MD, LOG, JSON, XML, HTML に対応</p>
                 <button class="browse-btn" onclick="document.getElementById('file-input').click()">
                     📁 ファイルを選択
                 </button>
             </div>
-            <input type="file" id="file-input" accept=".pdf" multiple>
+            <input type="file" id="file-input"
+                accept=".pdf,.txt,.csv,.md,.log,.json,.xml,.html,.htm,.js,.css,.py,.yaml,.yml,.ini,.cfg,.conf,.tsv,.rst,.tex"
+                multiple>
         </div>
 
         <!-- File List -->
@@ -753,10 +755,40 @@
             });
         });
 
+        // Supported file extensions
+        const SUPPORTED_EXTENSIONS = [
+            'pdf', 'txt', 'csv', 'md', 'log', 'json', 'xml', 'html', 'htm',
+            'js', 'css', 'py', 'yaml', 'yml', 'ini', 'cfg', 'conf', 'tsv',
+            'rst', 'tex'
+        ];
+
+        function getFileExtension(filename) {
+            return filename.split('.').pop().toLowerCase();
+        }
+
+        function isSupportedFile(file) {
+            const ext = getFileExtension(file.name);
+            return SUPPORTED_EXTENSIONS.includes(ext);
+        }
+
+        function isPDF(file) {
+            return getFileExtension(file.name) === 'pdf';
+        }
+
+        function getFileIcon(filename) {
+            const ext = getFileExtension(filename);
+            if (ext === 'pdf') return '📕';
+            if (['json', 'xml', 'yaml', 'yml'].includes(ext)) return '📊';
+            if (['js', 'css', 'py', 'html', 'htm'].includes(ext)) return '💻';
+            if (['csv', 'tsv'].includes(ext)) return '📋';
+            if (ext === 'md') return '📝';
+            return '📄';
+        }
+
         dropZone.addEventListener('drop', (e) => {
-            const files = Array.from(e.dataTransfer.files).filter(f => f.type === 'application/pdf');
+            const files = Array.from(e.dataTransfer.files).filter(f => isSupportedFile(f));
             if (files.length === 0) {
-                showToast('PDFファイルのみ対応しています', 'error');
+                showToast('対応していないファイル形式です', 'error');
                 return;
             }
             addFiles(files);
@@ -823,7 +855,7 @@
 
             fileList.innerHTML = state.files.map((file, i) => `
         <div class="file-item">
-          <div class="file-icon">📕</div>
+          <div class="file-icon">${getFileIcon(file.name)}</div>
           <div class="file-info">
             <div class="file-name">${escapeHtml(file.name)}</div>
             <div class="file-size">${formatSize(file.size)}</div>
@@ -1075,6 +1107,57 @@
             return { text, pages: numPages };
         }
 
+        // --- Text File Extraction (non-PDF) ---
+        async function extractTextFromFile(file, fileIndex) {
+            const statusEl = document.getElementById(`status-${fileIndex}`);
+            if (statusEl) {
+                statusEl.className = 'file-status processing';
+                statusEl.textContent = '読み込み中...';
+            }
+
+            let text = '';
+
+            try {
+                // Try UTF-8 first
+                text = await file.text();
+
+                // Check for mojibake (common garbled patterns for Shift_JIS/EUC-JP read as UTF-8)
+                const hasMojibake = /\ufffd/.test(text) ||
+                    (text.length > 0 && /[\x80-\xff]/.test(text.substring(0, 100)));
+
+                if (hasMojibake) {
+                    // Retry with Shift_JIS
+                    const arrayBuffer = await file.arrayBuffer();
+                    const decoder = new TextDecoder('shift_jis', { fatal: false });
+                    const sjisText = decoder.decode(arrayBuffer);
+
+                    // If Shift_JIS produces fewer replacement chars, use it
+                    const utf8Errors = (text.match(/\ufffd/g) || []).length;
+                    const sjisErrors = (sjisText.match(/\ufffd/g) || []).length;
+
+                    if (sjisErrors < utf8Errors) {
+                        text = sjisText;
+                    }
+                }
+            } catch (e) {
+                // Fallback: read as ArrayBuffer and try various encodings
+                const arrayBuffer = await file.arrayBuffer();
+                const decoder = new TextDecoder('shift_jis', { fatal: false });
+                text = decoder.decode(arrayBuffer);
+            }
+
+            if (statusEl) {
+                statusEl.className = 'file-status done';
+                statusEl.textContent = '完了 ✓';
+            }
+
+            // Count "pages" as ~50 lines per page for stats
+            const lineCount = text.split('\n').length;
+            const pages = Math.max(1, Math.ceil(lineCount / 50));
+
+            return { text, pages };
+        }
+
         function updateFileProgress(fileIndex, currentPage, totalPages) {
             const statusEl = document.getElementById(`status-${fileIndex}`);
             if (statusEl) {
@@ -1107,7 +1190,12 @@
                 try {
                     progressText.textContent = `${file.name} を処理中...`;
 
-                    const result = await extractTextFromPDF(file, i);
+                    let result;
+                    if (isPDF(file)) {
+                        result = await extractTextFromPDF(file, i);
+                    } else {
+                        result = await extractTextFromFile(file, i);
+                    }
 
                     // Add separator between files
                     if (combinedText.length > 0) {
